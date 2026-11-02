@@ -462,10 +462,17 @@
   $('preset').addEventListener('change', (e) => applyPreset(e.target.value));
   $('reseed').addEventListener('click', () => { starSeed = (Math.random() * 1e6) | 0; schedule(); });
   $('download').addEventListener('click', () => {
-    const a = document.createElement('a');
-    a.download = `${($('text').value || 'letters').toLowerCase()}-bubble-letters.png`;
-    a.href = canvas.toDataURL('image/png');
-    a.click();
+    const url = canvas.toDataURL('image/png');
+    // Show the image so it can be saved on a phone (press and hold) or where
+    // downloads are blocked; also try a normal download.
+    const out = $('saved');
+    if (out) { out.src = url; out.parentElement.hidden = false; out.scrollIntoView({ behavior: 'smooth', block: 'center' }); }
+    try {
+      const a = document.createElement('a');
+      a.download = `${($('text').value || 'letters').toLowerCase()}-bubble-letters.png`;
+      a.href = url;
+      a.click();
+    } catch (e) { /* ignore */ }
   });
   let lastW = 0;
   window.addEventListener('resize', () => {

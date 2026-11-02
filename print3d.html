@@ -1,0 +1,198 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <title>Bubble Letter Maker</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Baloo+2:wght@800&family=Bubblegum+Sans&family=Chewy&family=DynaPuff:wght@700&family=Fredoka:wght@500;700&family=Lilita+One&family=Sniglet:wght@800&family=Titan+One&display=swap" rel="stylesheet" />
+  <style>
+    /* Layout: 3D preview on the left (sticky on desktop), letter template cards on the right; stacks on phones. */
+    :root {
+      --bg: #f5f1ee;
+      --panel: #ffffff;
+      --sunk: #efe8e4;
+      --text: #2d2624;
+      --muted: #7b6f6a;
+      --border: #e4dad5;
+      --accent: #c9577f;
+      --accent-ink: #ffffff;
+      --stage: #ebe2de;
+      --font-display: "Fredoka", "Arial Rounded MT Bold", system-ui, sans-serif;
+      --font-body: system-ui, -apple-system, "Segoe UI", sans-serif;
+    }
+    @media (prefers-color-scheme: dark) {
+      :root:not([data-theme="light"]) {
+        --bg: #1d1918; --panel: #272221; --sunk: #201c1b; --text: #f2ebe7; --muted: #a99d97;
+        --border: #3b3431; --accent: #e07ea1; --accent-ink: #1d1918; --stage: #2c2624; color-scheme: dark;
+      }
+    }
+    :root[data-theme="dark"] {
+      --bg: #1d1918; --panel: #272221; --sunk: #201c1b; --text: #f2ebe7; --muted: #a99d97;
+      --border: #3b3431; --accent: #e07ea1; --accent-ink: #1d1918; --stage: #2c2624; color-scheme: dark;
+    }
+    * { box-sizing: border-box; }
+    [hidden] { display: none !important; }
+    body { margin: 0; background: var(--bg); color: var(--text); font: 15px/1.45 var(--font-body); }
+    main {
+      max-width: 1200px; margin: 0 auto;
+      padding-block: 16px 40px;
+      padding-left: max(16px, env(safe-area-inset-left, 0px));
+      padding-right: max(16px, env(safe-area-inset-right, 0px));
+    }
+    h1 { font: 700 26px/1.1 var(--font-display); margin: 4px 0 4px; letter-spacing: 0.2px; }
+    .lede { color: var(--muted); margin: 0 0 16px; max-width: 65ch; }
+    h2 { font: 700 15px/1.2 var(--font-display); margin: 0 0 10px; letter-spacing: 0.3px; }
+    .layout { display: grid; grid-template-columns: minmax(0, 1.15fr) minmax(0, 1fr); gap: 16px; align-items: start; }
+    @media (max-width: 860px) { .layout { grid-template-columns: minmax(0, 1fr); } }
+    .stage-col { position: sticky; top: calc(env(safe-area-inset-top, 0px) + 12px); display: grid; gap: 10px; min-width: 0; }
+    @media (max-width: 860px) { .stage-col { position: static; } }
+    #preview {
+      position: relative; width: 100%; aspect-ratio: 4 / 3; max-width: 100%;
+      background: radial-gradient(120% 90% at 30% 20%, var(--panel), var(--stage));
+      border: 1px solid var(--border); border-radius: 14px; overflow: hidden; touch-action: none;
+    }
+    #preview canvas { display: block; width: 100%; height: 100%; }
+    #preview-fallback { position: absolute; inset: 0; display: grid; place-items: center; color: var(--muted); padding: 16px; text-align: center; }
+    .hint { font-size: 12px; color: var(--muted); }
+    #status { min-height: 1.2em; font-size: 13px; color: var(--accent); }
+    .panel { background: var(--panel); border: 1px solid var(--border); border-radius: 14px; padding: 14px; min-width: 0; }
+    .stack { display: grid; gap: 14px; min-width: 0; }
+    label { display: flex; flex-direction: column; gap: 4px; font-size: 12px; color: var(--muted); letter-spacing: 0.2px; min-width: 0; }
+    input[type="text"], input[type="number"], select {
+      font: inherit; font-size: 15px; color: var(--text); background: var(--sunk);
+      border: 1px solid var(--border); border-radius: 8px; padding: 8px 10px; width: 100%; min-width: 0;
+    }
+    input[type="color"] { width: 100%; height: 36px; border: 1px solid var(--border); border-radius: 8px; background: var(--sunk); padding: 2px; }
+    input[type="range"] { width: 100%; accent-color: var(--accent); }
+    :focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+    .row { display: flex; gap: 8px; flex-wrap: wrap; align-items: end; }
+    .row > * { min-width: 0; }
+    .grow { flex: 1 1 160px; }
+    .grid2 { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 10px 14px; }
+    button {
+      font: 600 14px/1 var(--font-body); border: 1px solid transparent; border-radius: 9px; padding: 10px 14px; cursor: pointer;
+      background: var(--accent); color: var(--accent-ink);
+    }
+    button.secondary { background: var(--sunk); color: var(--text); border-color: var(--border); }
+    .icon-btn { background: none; color: var(--muted); border: 0; padding: 6px 4px; font-weight: 500; font-size: 13px; }
+    .file-btn { position: relative; overflow: hidden; display: inline-flex; align-items: center; font: 600 14px/1 var(--font-body); color: var(--text);
+      background: var(--sunk); border: 1px solid var(--border); border-radius: 9px; padding: 10px 14px; cursor: pointer; }
+    .file-btn input { position: absolute; inset: 0; opacity: 0; cursor: pointer; }
+    .val { float: right; color: var(--text); font-variant-numeric: tabular-nums; }
+    .check { flex-direction: row; gap: 8px; align-items: center; color: var(--text); font-size: 14px; }
+    .swatches { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 4px; }
+    .swatch { width: 22px; height: 22px; padding: 0; border-radius: 50%; border: 1px solid var(--border); }
+    #letters { display: grid; gap: 10px; }
+    .letter { border: 1px solid var(--border); border-radius: 12px; padding: 10px 12px; background: var(--panel); display: grid; gap: 10px; }
+    .letter.selected { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent); }
+    .letter-head { display: flex; align-items: center; gap: 10px; }
+    .char { width: 56px !important; flex: 0 0 56px; text-align: center; font-size: 26px !important; font-weight: 700; padding: 4px !important; }
+    .meta { flex: 1; color: var(--muted); font-size: 13px; display: flex; align-items: center; gap: 6px; }
+    .dot { width: 12px; height: 12px; border-radius: 50%; display: inline-block; border: 1px solid var(--border); flex: none; }
+    .letter-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px 12px; }
+    #filaments { list-style: none; padding: 0; margin: 0; display: flex; flex-wrap: wrap; gap: 6px 14px; font-size: 14px; }
+    #filaments li { display: flex; align-items: center; gap: 6px; }
+    .warn { color: var(--accent); font-size: 13px; margin: 8px 0 0; }
+    details summary { cursor: pointer; font: 700 15px/1.2 var(--font-display); }
+    details[open] summary { margin-bottom: 10px; }
+    ol.steps { margin: 0; padding-left: 20px; display: grid; gap: 6px; max-width: 65ch; }
+    @media (prefers-reduced-motion: reduce) { * { scroll-behavior: auto; } }
+  </style>
+</head>
+<body>
+<main>
+  <h1>Bubble Letter Maker</h1>
+  <p class="lede">Make puffy, textured letters for your Bambu Lab P1S. Pick a font, height, colour and texture for each letter, then download a 3MF for Bambu Studio. Each letter prints flat side down and needs no supports.</p>
+
+  <div class="layout">
+    <div class="stage-col">
+      <div id="preview"><div id="preview-fallback" hidden>The 3D preview needs an internet connection. You can still download the files.</div></div>
+      <div class="hint">Drag to rotate. Pinch or scroll to zoom.</div>
+      <div id="status" role="status"></div>
+      <div class="panel">
+        <h2>Filament for your AMS</h2>
+        <ul id="filaments"></ul>
+        <p class="warn" id="ams-warn" hidden>You have more than 4 colours. You'll need a second AMS, or you can print in batches and swap spools.</p>
+        <p class="hint" id="dims"></p>
+      </div>
+      <div class="panel stack">
+        <div class="row">
+          <button id="export-zip" type="button">Download print files (.zip)</button>
+          <button id="export-3mf" type="button" class="secondary">Download .3mf only</button>
+        </div>
+        <div class="hint">The zip contains a .3mf with every letter, one .stl per letter, a print guide and your template.</div>
+        <div class="row">
+          <button id="save-template" type="button" class="secondary">Save template</button>
+          <label class="file-btn">Load template<input id="load-template" type="file" accept=".json,application/json" /></label>
+        </div>
+      </div>
+    </div>
+
+    <div class="stack">
+      <div class="panel stack">
+        <h2>1. Letters</h2>
+        <div class="row">
+          <label class="grow">Word or letters
+            <input id="word" type="text" value="OLIVE" maxlength="20" autocomplete="off" />
+          </label>
+          <button id="fill" type="button">Make letters</button>
+        </div>
+        <div class="grid2">
+          <label>Font for new letters <select id="d-font"></select></label>
+          <label>Texture for new letters <select id="d-texture"></select></label>
+          <label>Height for new letters (mm) <input id="d-size" type="number" min="20" max="240" step="1" inputmode="numeric" /></label>
+          <label>Colour for new letters <input id="d-color" type="color" /><div id="d-swatches"></div></label>
+        </div>
+        <div class="row">
+          <button id="apply-all" type="button" class="secondary">Apply these to every letter</button>
+          <button id="add" type="button" class="secondary">Add a letter</button>
+        </div>
+      </div>
+
+      <div class="panel stack">
+        <h2>2. Customise each letter</h2>
+        <p class="hint" id="empty" hidden>No letters yet. Type a word above and press Make letters.</p>
+        <div id="letters"></div>
+      </div>
+
+      <div class="panel stack">
+        <h2>3. Shape and print settings</h2>
+        <label>Texture depth <span class="val" id="v-depth"></span>
+          <input id="s-depth" type="range" min="0" max="2" step="0.05" /></label>
+        <label>Puffiness (how tall the dome is) <span class="val" id="v-puff"></span>
+          <input id="s-puff" type="range" min="0.2" max="1.2" step="0.05" /></label>
+        <label>Chubbiness (fattens thin strokes) <span class="val" id="v-chub"></span>
+          <input id="s-chub" type="range" min="0" max="0.25" step="0.01" /></label>
+        <label>Flat base thickness <span class="val" id="v-base"></span>
+          <input id="s-base" type="range" min="1" max="6" step="0.5" /></label>
+        <label>Mesh detail
+          <select id="s-detail">
+            <option value="0.6">Draft (faster, smaller files)</option>
+            <option value="0.4">Standard (0.4 mm, matches the nozzle)</option>
+            <option value="0.3">Fine (0.3 mm, bigger files)</option>
+          </select>
+        </label>
+        <label class="check"><input id="s-back" type="checkbox" /> Also make a mirrored back half for each letter, to glue on for a fully round letter that stands up</label>
+      </div>
+
+      <details class="panel">
+        <summary>Printing in Bambu Studio</summary>
+        <ol class="steps">
+          <li>Unzip the download. On an iPhone, tap the zip in the Files app.</li>
+          <li>In Bambu Studio, choose File &gt; Import, then pick the <b>.3mf</b>. If it asks, choose to load geometry only.</li>
+          <li>Every letter is a separate object, named with its AMS slot, for example "O - slot 1 Pink". Select each one and set its filament to that slot number.</li>
+          <li>Press <b>A</b> to arrange the plate, then slice. The letters lie flat side down, so they need no supports.</li>
+          <li>Suggested settings: 0.16 mm layers, 2 to 3 walls and 10 to 15% gyroid infill.</li>
+          <li>For fuzzy or fluffy letters, also turn on Fuzzy Skin for outer walls (Quality &gt; Others). It roughens the sides and adds to the texture.</li>
+        </ol>
+      </details>
+    </div>
+  </div>
+</main>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
+<script src="print3d.js"></script>
+</body>
+</html>

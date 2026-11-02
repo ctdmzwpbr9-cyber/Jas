@@ -1,0 +1,135 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Bubble Letters</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Fredoka:wght@700&family=Baloo+2:wght@800&family=Sniglet:wght@800&display=swap" rel="stylesheet" />
+  <style>
+    :root {
+      --bg: #f6f3ef;
+      --panel: #ffffff;
+      --text: #2b2624;
+      --muted: #7a706b;
+      --border: #e6dfd9;
+      --accent: #d9779b;
+    }
+    @media (prefers-color-scheme: dark) {
+      :root {
+        --bg: #1c1a19;
+        --panel: #262321;
+        --text: #f1ece8;
+        --muted: #a69c96;
+        --border: #3a3532;
+      }
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      background: var(--bg);
+      color: var(--text);
+      font: 15px/1.4 system-ui, -apple-system, "Segoe UI", sans-serif;
+    }
+    main { max-width: 1100px; margin: 0 auto; padding: 16px; }
+    h1 { font-size: 20px; margin: 4px 0 12px; }
+    .stage {
+      width: 100%;
+      border-radius: 14px;
+      overflow: hidden;
+      border: 1px solid var(--border);
+      background: #eee;
+    }
+    canvas { display: block; width: 100%; height: auto; }
+    .controls {
+      margin-top: 14px;
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+      gap: 12px 18px;
+      background: var(--panel);
+      border: 1px solid var(--border);
+      border-radius: 14px;
+      padding: 14px;
+    }
+    label { display: flex; flex-direction: column; gap: 4px; font-size: 13px; color: var(--muted); }
+    input[type="text"], select {
+      font: inherit; color: var(--text); background: var(--bg);
+      border: 1px solid var(--border); border-radius: 8px; padding: 8px 10px;
+    }
+    input[type="range"] { width: 100%; accent-color: var(--accent); }
+    input[type="color"] { width: 100%; height: 36px; border: 1px solid var(--border); border-radius: 8px; background: none; padding: 2px; }
+    .row { display: flex; gap: 8px; align-items: center; }
+    .check { flex-direction: row; align-items: center; gap: 8px; color: var(--text); }
+    button {
+      font: inherit; border: 0; border-radius: 8px; padding: 10px 14px; cursor: pointer;
+      background: var(--accent); color: #fff; font-weight: 600;
+    }
+    button.secondary { background: var(--bg); color: var(--text); border: 1px solid var(--border); }
+    .status { font-size: 12px; color: var(--muted); min-height: 1em; margin-top: 6px; }
+  </style>
+</head>
+<body>
+<main>
+  <h1>Textured bubble letters</h1>
+
+  <div class="stage"><canvas id="canvas"></canvas></div>
+  <div class="status" id="status"></div>
+
+  <div class="controls">
+    <label>Text
+      <input id="text" type="text" value="SOPHIE" maxlength="14" />
+    </label>
+
+    <label>Preset
+      <select id="preset">
+        <option value="fleece">Pink fleece (nursery)</option>
+        <option value="ceramic">Pastel ceramic (shelf)</option>
+      </select>
+    </label>
+
+    <label>Texture
+      <select id="texture">
+        <option value="fleece">Fleece / felt</option>
+        <option value="ceramic">Sandy ceramic</option>
+        <option value="smooth">Smooth plastic</option>
+      </select>
+    </label>
+
+    <label>Font
+      <select id="font">
+        <option value="Fredoka">Fredoka</option>
+        <option value="Baloo 2">Baloo 2</option>
+        <option value="Sniglet">Sniglet</option>
+      </select>
+    </label>
+
+    <label>Letter colour
+      <input id="color" type="color" value="#f2a7c3" />
+    </label>
+
+    <label class="check"><input id="multi" type="checkbox" /> Different pastel per letter</label>
+
+    <label>Puffiness <input id="puff" type="range" min="0.2" max="1.6" step="0.05" value="1" /></label>
+    <label>Chubbiness <input id="chub" type="range" min="0" max="0.35" step="0.01" value="0.16" /></label>
+    <label>Texture strength <input id="grain" type="range" min="0" max="2" step="0.05" value="0.7" /></label>
+    <label>Letter spacing <input id="spacing" type="range" min="-0.08" max="0.25" step="0.01" value="0.02" /></label>
+
+    <label>Background
+      <input id="bg" type="color" value="#efe8e1" />
+    </label>
+
+    <div class="row">
+      <label class="check"><input id="stars" type="checkbox" checked /> Stars</label>
+      <label class="check"><input id="shelf" type="checkbox" checked /> Ledge</label>
+    </div>
+
+    <div class="row">
+      <button id="download">Download PNG</button>
+      <button id="reseed" class="secondary">New stars</button>
+    </div>
+  </div>
+</main>
+<script src="bubble-letters.js"></script>
+</body>
+</html>

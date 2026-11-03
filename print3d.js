@@ -44,7 +44,7 @@
 
   const state = {
     defaults: {
-      font: 'Fredoka', size: 80, color: '#f2a7c3', texture: 'crochet',
+      font: 'DynaPuff', size: 80, color: '#f2a7c3', texture: 'crochet',
     },
     settings: {
       depth: 1, puff: 0.8, chub: 0.08, base: 2, detail: 0.4, backHalf: false,
@@ -535,7 +535,8 @@
   // ------------------------------------------------------ mesh cache ----
   const cache = new Map();
   function letterKey(L, S) {
-    return JSON.stringify([L.char, L.font, L.size, L.texture, S.depth, S.puff, S.chub, S.base, S.detail, L.seed]);
+    // include whether the font has loaded, so a fallback-font mesh is never reused
+    return JSON.stringify([L.char, L.font, !!fontReady[L.font], L.size, L.texture, S.depth, S.puff, S.chub, S.base, S.detail, L.seed]);
   }
   function meshFor(L) {
     const k = letterKey(L, state.settings);
@@ -992,13 +993,20 @@
 
   // ------------------------------------------------------------ fonts ----
   const fontPromises = {};
+  const fontReady = {};
   function ensureFont(name) {
     const f = fontByName(name);
+    if (fontReady[name]) return Promise.resolve(true);
     if (!fontPromises[name]) {
+      const spec = `${f.weight} 100px "${f.name}"`;
       fontPromises[name] = Promise.race([
-        document.fonts.load(`${f.weight} 100px "${f.name}"`),
-        new Promise((r) => setTimeout(r, 4000)),
-      ]).catch(() => {});
+        document.fonts.load(spec).then((faces) => faces.length > 0),
+        new Promise((r) => setTimeout(() => r(false), 12000)),
+      ]).catch(() => false).then((ok) => {
+        fontReady[name] = ok;
+        if (!ok) delete fontPromises[name]; // try again next time
+        return ok;
+      });
     }
     return fontPromises[name];
   }
@@ -1045,7 +1053,9 @@
     renderRowsMetaOnly();
     const t = initThree();
     const fonts = [...new Set(state.letters.map((l) => l.font))];
-    await Promise.all(fonts.map(ensureFont));
+    const loaded = await Promise.all(fonts.map(ensureFont));
+    const missing = fonts.filter((f, i) => !loaded[i]);
+    if (token !== previewToken) return;
     const meshes = [];
     for (let i = 0; i < state.letters.length; i++) {
       const L = state.letters[i];
@@ -1054,7 +1064,9 @@
       if (token !== previewToken) return;
       meshes.push({ L, m: meshFor(L) });
     }
-    setBusy('');
+    setBusy(missing.length
+      ? `Couldn't load ${missing.join(', ')}, so a stand-in font is shown. Check your internet connection; it will retry on the next change.`
+      : '');
     updateSummary();
     if (!t) { $('preview-fallback').hidden = false; return; }
     const { T, group, camera, controls } = t;

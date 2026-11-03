@@ -14,5 +14,5 @@ push the thumb ridges near the front edge.
 
 **Quick print (Bambu P1S, 0.4 nozzle, PLA):** print each part on its own plate, flat side down,
 with no supports (the groove roofs are 45° chamfers). Use the 0.28 mm Extra Draft profile,
-2 walls and 0 to 10% infill. The box is mostly walls, so infill hardly matters. The lid prints
+**3 wall loops** and 0% sparse infill. The walls are 1.3 mm (3 lines) and thicken to 2.4 mm only in the top band that holds the grooves. For a big extra saving, use a 0.6 mm nozzle with 0.4 mm layers. The lid prints
 with its notch facing down, and the notch only removes material, so no supports are needed there either.

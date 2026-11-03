@@ -17,10 +17,11 @@ OUT = os.path.join(os.path.dirname(os.path.abspath(__file__)), "out")
 
 # ---------------------------------------------------------------- sizes (mm)
 L, D, H = 220.0, 175.0, 100.0   # outside: width (slide direction) x depth x height
-WALL = 2.4                      # 6 lines with a 0.4 nozzle
-FLOOR = 1.2
+WALL = 1.3                      # thin wall: 3 lines with a 0.4 nozzle
+BAND = 2.4                      # wall thickness in the top band that holds the grooves
+FLOOR = 1.0
 GD = 1.2                        # groove depth into the walls
-LID_T = 2.0                     # lid thickness
+LID_T = 1.6                     # lid thickness
 GAP_Z = 0.4                     # vertical play in the groove
 GAP_XY = 0.3                    # side play per edge
 TOP_LIP = 0.6                   # solid wall left above the groove chamfer
@@ -45,37 +46,46 @@ def rod_y(y0, y1, x, z, r):     # cylinder along Y
 
 
 def make_box():
-    body = box(0, 0, 0, L, D, H) - box(WALL, WALL, FLOOR, L - WALL, D - WALL, H + E)
+    # Thin walls for most of the height; only the top band is thick enough
+    # for the lid grooves. A 45 degree ramp joins them so it prints unsupported.
+    zb = G_BOT - 1.0                 # bottom of the thick band
+    dz = BAND - WALL
+    t = 0.01
+    body = box(0, 0, 0, L, D, H) - box(WALL, WALL, FLOOR, L - WALL, D - WALL, zb - dz + t)
+    body = body - Manifold.batch_hull([
+        box(WALL, WALL, zb - dz, L - WALL, D - WALL, zb - dz + t),
+        box(BAND, BAND, zb - t, L - BAND, D - BAND, zb),
+    ])
+    body = body - box(BAND, BAND, zb - t, L - BAND, D - BAND, H + E)
 
     # Groove: straight slot for the lid, then a 45 degree chamfer above it so
     # the groove roof prints without supports. Runs out through the front (x=0)
     # and into the back wall, which is the end stop.
-    gx1, gy0, gy1 = L - WALL + GD, WALL - GD, D - WALL + GD
+    gx1, gy0, gy1 = L - BAND + GD, BAND - GD, D - BAND + GD
     slot = box(-E, gy0, G_BOT, gx1, gy1, G_TOP)
-    t = 0.01
     chamfer = Manifold.batch_hull([
         box(-E, gy0, G_TOP - t, gx1, gy1, G_TOP),
-        box(-E, WALL, G_TOP + GD - t, L - WALL, D - WALL, G_TOP + GD),
+        box(-E, BAND, G_TOP + GD - t, L - BAND, D - BAND, G_TOP + GD),
     ])
     body = body - slot - chamfer
 
     # Lower the front wall to the groove floor so the lid can slide in.
-    body = body - box(-E, gy0, G_BOT, WALL + E, gy1, H + E)
+    body = body - box(-E, gy0, G_BOT, BAND + E, gy1, H + E)
 
     # Click-stop bump on top of the lowered front wall (middle section only,
     # so the lid flexes over it).
-    bump = rod_y(D / 2 - BUMP_LEN / 2, D / 2 + BUMP_LEN / 2, WALL / 2, G_BOT, BUMP_R)
-    body = body + (bump - box(-E, 0, G_BOT - 5, WALL + E, D, G_BOT))
+    bump = rod_y(D / 2 - BUMP_LEN / 2, D / 2 + BUMP_LEN / 2, BAND / 2, G_BOT, BUMP_R)
+    body = body + (bump - box(-E, 0, G_BOT - 5, BAND + E, D, G_BOT))
 
     return body
 
 
 def make_lid():
-    lx = L - WALL + GD - GAP_XY       # front edge flush with the box front
-    ly = D - 2 * (WALL - GD) - 2 * GAP_XY
+    lx = L - BAND + GD - GAP_XY       # front edge flush with the box front
+    ly = D - 2 * (BAND - GD) - 2 * GAP_XY
     lid = box(0, 0, 0, lx, ly, LID_T)
     # Notch on the underside that catches the bump when closed.
-    lid = lid - rod_y(ly / 2 - BUMP_LEN / 2 - 2, ly / 2 + BUMP_LEN / 2 + 2, WALL / 2, 0, BUMP_R + 0.2)
+    lid = lid - rod_y(ly / 2 - BUMP_LEN / 2 - 2, ly / 2 + BUMP_LEN / 2 + 2, BAND / 2, 0, BUMP_R + 0.2)
     # Thumb grip grooves near the front edge on the top.
     for i in range(4):
         x = 8 + i * 4

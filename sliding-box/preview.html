@@ -1,0 +1,49 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Potion Kit Box</title>
+<style>html,body{margin:0;height:100%;background:#f6f1ea;overflow:hidden}canvas{display:block}</style>
+</head>
+<body>
+<!-- Open through a local server (python3 -m http.server in this folder). ?open=80 slides the lid out 80 mm. -->
+<script type="importmap">
+{ "imports": { "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js",
+               "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/" } }
+</script>
+<script type="module">
+import * as THREE from "three";
+import { STLLoader } from "three/addons/loaders/STLLoader.js";
+import { OrbitControls } from "three/addons/controls/OrbitControls.js";
+const q = new URLSearchParams(location.search);
+const OPEN = +(q.get("open") ?? 0), VIEW = q.get("view") || "hero";
+const renderer = new THREE.WebGLRenderer({ antialias: true, preserveDrawingBuffer: true });
+renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+renderer.setSize(innerWidth, innerHeight);
+renderer.shadowMap.enabled = true; renderer.outputColorSpace = THREE.SRGBColorSpace;
+document.body.appendChild(renderer.domElement);
+const scene = new THREE.Scene(); scene.background = new THREE.Color(0xf6f1ea);
+const cam = new THREE.PerspectiveCamera(30, innerWidth / innerHeight, 1, 5000);
+cam.up.set(0, 0, 1);
+if (VIEW === "top") cam.position.set(110, 60, 620); else if (VIEW === "back") cam.position.set(420, 560, 330); else cam.position.set(-260, -420, 330);
+const ctl = new OrbitControls(cam, renderer.domElement); ctl.target.set(110, 87, 50); ctl.update();
+scene.add(new THREE.HemisphereLight(0xffffff, 0xd8cfc4, 1.6));
+const sun = new THREE.DirectionalLight(0xffffff, 2.2); sun.position.set(-200, -300, 600); sun.castShadow = true;
+Object.assign(sun.shadow.camera, { left: -300, right: 300, top: 300, bottom: -300 }); sun.shadow.mapSize.set(2048, 2048);
+scene.add(sun);
+const ground = new THREE.Mesh(new THREE.PlaneGeometry(3000, 3000), new THREE.ShadowMaterial({ opacity: 0.18 }));
+ground.receiveShadow = true; scene.add(ground);
+const loader = new STLLoader();
+const add = (f, color, pos) => new Promise(r => loader.load("out/potion/" + f, g => {
+  g.computeVertexNormals();
+  const m = new THREE.Mesh(g, new THREE.MeshStandardMaterial({ color, roughness: 0.65 }));
+  m.position.set(...pos); m.castShadow = m.receiveShadow = true; scene.add(m); r();
+}));
+const LID = [-OPEN, 1.5, 95.8];
+await Promise.all([add("box.stl", 0xa8dde8, [0, 0, 0]), add("lid-base.stl", 0xa8dde8, LID), add("lid-art.stl", 0xf0457e, LID)]);
+const loop = () => { renderer.render(scene, cam); requestAnimationFrame(loop); }; loop();
+document.title = "ready";
+</script>
+</body>
+</html>

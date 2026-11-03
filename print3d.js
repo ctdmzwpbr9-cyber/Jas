@@ -19,12 +19,12 @@
   // ------------------------------------------------------------- config --
   const FONTS = [
     { name: 'Fredoka', weight: 700 },
-    { name: 'DynaPuff', weight: 700 },
+    { name: 'DynaPuff', weight: 700, chub: 0.35 },
     { name: 'Baloo 2', weight: 800 },
     { name: 'Sniglet', weight: 800 },
-    { name: 'Chewy', weight: 400 },
-    { name: 'Titan One', weight: 400 },
-    { name: 'Lilita One', weight: 400 },
+    { name: 'Chewy', weight: 400, chub: 0.7 },
+    { name: 'Titan One', weight: 400, chub: 0.5 },
+    { name: 'Lilita One', weight: 400, chub: 0.7 },
     { name: 'Bubblegum Sans', weight: 400 },
   ];
   const MIX = 'Mix';
@@ -185,7 +185,7 @@
   }
 
   // ------------------------------------------------------- glyph mask ----
-  function rasterGlyph(ch, font, fontPx, strokePx) {
+  function rasterGlyph(ch, font, fontPx, strokePx, P = 2) {
     const c = document.createElement('canvas');
     const g = c.getContext('2d');
     const spec = `${font.weight} ${fontPx}px "${font.name}", "Arial Rounded MT Bold", sans-serif`;
@@ -209,7 +209,6 @@
       }
     }
     if (x1 < 0) return null;
-    const P = 2;
     const cw = x1 - x0 + 1 + 2 * P, chh = y1 - y0 + 1 + 2 * P;
     const inside = new Uint8Array(cw * chh);
     for (let y = y0; y <= y1; y++) for (let x = x0; x <= x1; x++) {
@@ -233,136 +232,296 @@
   }
 
   // ---------------------------------------------------------- meshing ----
+  //
+  // Shape of a letter (cross-section through a stroke):
+  //
+  //        top grid (sd > B)          the domed front, on a regular grid
+  //       /                \
+  //   side rings (0 < sd < B)         rings that follow the outline exactly,
+  //     |                    |        stepping down the steep part of the dome
+  //   base wall (0..base mm)          vertical band at the outline
+  //   flat back on the bed
+  //
+  // sd = signed distance to the outline in mm (positive inside), computed from
+  // a supersampled mask so the outline is smooth, not pixel-stepped.
+
   function buildLetterMesh(L, S, seed) {
     const font = fontByName(L.font);
     const cell = S.detail;
-    const target = L.size / cell; // desired glyph height in cells
-    // measure, then render at the exact scale
-    const probe = rasterGlyph(L.char, font, 200, 200 * S.chub);
+    const chub = S.chub * (font.chub ?? 1); // already-chunky fonts need less
+    const probe = rasterGlyph(L.char, font, 200, 200 * chub, 2);
     if (!probe) return null;
-    const fontPx = 200 * target / probe.glyphH;
-    const gm = rasterGlyph(L.char, font, fontPx, fontPx * S.chub);
+    const fontPxCells = 200 * (L.size / cell) / probe.glyphH; // font size in cells
+
+    // supersampling factor for the distance field (bounded for big letters)
+    const approxCells = (probe.w / probe.glyphH) * (L.size / cell) * (L.size / cell) * 1.2;
+    const SS = Math.max(1, Math.min(4, Math.floor(Math.sqrt(2.5e6 / approxCells))));
+    const px = cell / SS; // mm per supersampled pixel
+    const gm = rasterGlyph(L.char, font, fontPxCells * SS, fontPxCells * SS * chub, 3 * SS + 4);
     if (!gm) return null;
-    const { inside, w, h } = gm;
-    fixDiagonals(inside, w, h);
 
-    const N = w * h;
-    const dist = distanceTransform(inside, w, h);
-    let maxD = 1;
-    for (let i = 0; i < N; i++) if (dist[i] > maxD) maxD = dist[i];
-
-    // pillow profile (in mm)
-    const Rmm = maxD * cell;
-    const dome = new Float32Array(N);
-    for (let i = 0; i < N; i++) {
-      if (!inside[i]) continue;
-      const t = Math.min(1, dist[i] / maxD);
-      dome[i] = S.puff * Rmm * Math.sqrt(1 - (1 - t) * (1 - t));
+    // signed distance field (mm), supersampled
+    const W = gm.w, H = gm.h, NS = W * H;
+    const invert = (m) => { const o = new Uint8Array(NS); for (let i = 0; i < NS; i++) o[i] = m[i] ? 0 : 1; return o; };
+    // round off sharp inside corners (morphological closing, radius 0.6 mm)
+    const rc = 0.6 / px;
+    const d0 = distanceTransform(invert(gm.inside), W, H);
+    const dil = new Uint8Array(NS);
+    for (let i = 0; i < NS; i++) dil[i] = gm.inside[i] || d0[i] <= rc ? 1 : 0;
+    const dd = distanceTransform(dil, W, H);
+    const mask = new Uint8Array(NS);
+    for (let i = 0; i < NS; i++) mask[i] = dd[i] > rc ? 1 : 0;
+    for (let i = 0; i < NS; i++) if (gm.inside[i]) mask[i] = 1;
+    const din = distanceTransform(mask, W, H);
+    const dout = distanceTransform(invert(mask), W, H);
+    const sdf = new Float32Array(NS);
+    let maxSd = 0;
+    for (let i = 0; i < NS; i++) {
+      sdf[i] = (mask[i] ? din[i] - 0.5 : -(dout[i] - 0.5)) * px;
+      if (sdf[i] > maxSd) maxSd = sdf[i];
     }
-    boxBlur(dome, w, h, maxD * 0.15, 2);
-    for (let i = 0; i < N; i++) if (!inside[i]) dome[i] = 0;
+    // light blur removes the last pixel-level ripples from the field
+    boxBlur(sdf, W, H, Math.max(1, Math.round(SS / 2)), 1);
 
-    // corner grid values (outside cells count as 0 -> soft edge)
-    const CW = w + 1, CH = h + 1;
-    const cornerZ = new Float32Array(CW * CH);
-    const cornerD = new Float32Array(CW * CH);
-    for (let cy = 0; cy < CH; cy++) for (let cx = 0; cx < CW; cx++) {
-      let z = 0, dd = 0;
-      for (let oy = -1; oy <= 0; oy++) for (let ox = -1; ox <= 0; ox++) {
-        const x = cx + ox, y = cy + oy;
-        if (x < 0 || y < 0 || x >= w || y >= h) continue;
-        const i = y * w + x;
-        if (inside[i]) { z += dome[i]; dd += (dist[i] - 0.5) * cell; }
-      }
-      cornerZ[cy * CW + cx] = z / 4;
-      cornerD[cy * CW + cx] = Math.max(0, dd / 4);
-    }
-
-    // vertex allocation
-    const topId = new Int32Array(CW * CH).fill(-1);
-    const botId = new Int32Array(CW * CH).fill(-1);
-    const verts = []; // corner index per vertex (top first, then bottom)
-    const useCorner = (ci) => {
-      if (topId[ci] < 0) { topId[ci] = verts.length; verts.push(ci); }
+    const Wmm = W * px, Hmm = H * px;
+    // bilinear sample at (x, y) in mm, image orientation (y down)
+    const sd = (x, y) => {
+      let fx = x / px - 0.5, fy = y / px - 0.5;
+      if (fx < 0) fx = 0; if (fy < 0) fy = 0;
+      if (fx > W - 1.001) fx = W - 1.001; if (fy > H - 1.001) fy = H - 1.001;
+      const ix = fx | 0, iy = fy | 0, tx = fx - ix, ty = fy - iy, i = iy * W + ix;
+      return (sdf[i] * (1 - tx) + sdf[i + 1] * tx) * (1 - ty) + (sdf[i + W] * (1 - tx) + sdf[i + W + 1] * tx) * ty;
     };
+    const ge = px * 0.75;
+    const grad = (x, y) => [(sd(x + ge, y) - sd(x - ge, y)) / (2 * ge), (sd(x, y + ge) - sd(x, y - ge)) / (2 * ge)];
+    // move a point along the gradient until sd == level
+    const project = (x, y, level) => {
+      for (let k = 0; k < 8; k++) {
+        const s = sd(x, y) - level;
+        if (Math.abs(s) < 1e-3) break;
+        const [gx, gy] = grad(x, y);
+        const g2 = gx * gx + gy * gy;
+        if (g2 < 1e-4) break;
+        let st = s / g2;
+        const lim = 2 * cell;
+        if (st > lim) st = lim; else if (st < -lim) st = -lim;
+        x -= st * gx; y -= st * gy;
+      }
+      return [x, y];
+    };
+
+    // dome profile: circular cross-section, radius = half the thickest stroke
+    const R = Math.max(maxSd, cell);
+    const profile = (s) => {
+      if (s <= 0) return 0;
+      const t = Math.min(1, s / R);
+      return S.puff * R * Math.sqrt(1 - (1 - t) * (1 - t));
+    };
+    const B = Math.max(1.5 * cell, 0.25 * R); // width of the side band
+
+    // cell grid for the front
+    const w = Math.ceil(Wmm / cell), h = Math.ceil(Hmm / cell);
+    const inside = new Uint8Array(w * h);
+    const dome = new Float32Array(w * h);
+    for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) {
+      const s = sd((x + 0.5) * cell, (y + 0.5) * cell);
+      if (s > B) inside[y * w + x] = 1;
+      dome[y * w + x] = profile(s);
+    }
+    fixDiagonals(inside, w, h);
+    // blurred copy rounds off the crease along the middle of each stroke
+    const domeBlur = boxBlur(dome.slice(), w, h, (0.15 * R) / cell, 2);
+    const sampleCells = (arr, x, y) => {
+      let fx = x / cell - 0.5, fy = y / cell - 0.5;
+      if (fx < 0) fx = 0; if (fy < 0) fy = 0;
+      if (fx > w - 1.001) fx = w - 1.001; if (fy > h - 1.001) fy = h - 1.001;
+      const ix = fx | 0, iy = fy | 0, tx = fx - ix, ty = fy - iy, i = iy * w + ix;
+      if (w === 1 || h === 1) return arr[i];
+      return (arr[i] * (1 - tx) + arr[i + 1] * tx) * (1 - ty) + (arr[i + w] * (1 - tx) + arr[i + w + 1] * tx) * ty;
+    };
+    const smoothstep = (a, b, v) => { const t = Math.min(1, Math.max(0, (v - a) / (b - a))); return t * t * (3 - 2 * t); };
+    const domeAt = (x, y) => {
+      const s = sd(x, y);
+      const p = profile(s);
+      const wgt = smoothstep(B + 0.05 * R, B + 0.3 * R, s);
+      return wgt > 0 ? p + (Math.min(p, sampleCells(domeBlur, x, y)) - p) * wgt : p;
+    };
+    const texFade = (domeH) => smoothstep(0, 2, domeH); // keep the bottom outline clean
+    const sideSoft = (nz) => 0.5 + 0.5 * nz;             // calmer texture on steep sides
+    const tex = (X, Y) => textureHeight(L.texture, X, Y, seed) * S.depth;
+
+    // ---- vertices
+    const CW = w + 1, CH = h + 1;
+    const topId = new Int32Array(CW * CH).fill(-1);
+    const corners = [];
     for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) {
       if (!inside[y * w + x]) continue;
-      useCorner(y * CW + x); useCorner(y * CW + x + 1);
-      useCorner((y + 1) * CW + x); useCorner((y + 1) * CW + x + 1);
+      for (const ci of [y * CW + x, y * CW + x + 1, (y + 1) * CW + x, (y + 1) * CW + x + 1]) {
+        if (topId[ci] < 0) { topId[ci] = corners.length; corners.push(ci); }
+      }
     }
-    const nTop = verts.length;
-    for (let k = 0; k < nTop; k++) botId[verts[k]] = nTop + k;
+    const nC = corners.length;
+    if (!nC) return null;
 
-    const tris = [];
-    const wallEdges = [];
+    // outline edges of the top grid, oriented with the inside on the right
+    const edges = [];
     const inAt = (x, y) => x >= 0 && y >= 0 && x < w && y < h && inside[y * w + x];
+    const faces = [];
     for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) {
       if (!inside[y * w + x]) continue;
       const a = y * CW + x, b = y * CW + x + 1, c = (y + 1) * CW + x + 1, d = (y + 1) * CW + x;
-      tris.push(topId[a], topId[c], topId[b], topId[a], topId[d], topId[c]);
-      tris.push(botId[a], botId[b], botId[c], botId[a], botId[c], botId[d]);
-      if (!inAt(x, y - 1)) wallEdges.push(a, b);
-      if (!inAt(x + 1, y)) wallEdges.push(b, c);
-      if (!inAt(x, y + 1)) wallEdges.push(c, d);
-      if (!inAt(x - 1, y)) wallEdges.push(d, a);
-    }
-    for (let k = 0; k < wallEdges.length; k += 2) {
-      const p = wallEdges[k], q = wallEdges[k + 1];
-      tris.push(topId[p], topId[q], botId[q], topId[p], botId[q], botId[p]);
+      faces.push(a, b, c, d);
+      if (!inAt(x, y - 1)) edges.push(a, b);
+      if (!inAt(x + 1, y)) edges.push(b, c);
+      if (!inAt(x, y + 1)) edges.push(c, d);
+      if (!inAt(x - 1, y)) edges.push(d, a);
     }
 
-    // XY positions (mm, image orientation) + smooth the outline stair-steps
-    const px = new Float32Array(CW * CH), py = new Float32Array(CW * CH);
-    for (let cy = 0; cy < CH; cy++) for (let cx = 0; cx < CW; cx++) {
-      px[cy * CW + cx] = cx * cell; py[cy * CW + cx] = cy * cell;
+    // corner positions (image mm); outline corners are snapped onto sd == B
+    const cx = new Float32Array(nC), cy = new Float32Array(nC);
+    const isEdge = new Uint8Array(CW * CH);
+    for (let k = 0; k < edges.length; k++) isEdge[edges[k]] = 1;
+    for (let k = 0; k < nC; k++) {
+      const ci = corners[k];
+      let x = (ci % CW) * cell, y = Math.floor(ci / CW) * cell;
+      if (isEdge[ci]) [x, y] = project(x, y, B);
+      cx[k] = x; cy[k] = y;
     }
-    const nb1 = new Int32Array(CW * CH).fill(-1), nb2 = new Int32Array(CW * CH).fill(-1);
-    const link = (p, q) => { if (nb1[p] < 0) nb1[p] = q; else nb2[p] = q; };
-    for (let k = 0; k < wallEdges.length; k += 2) { link(wallEdges[k], wallEdges[k + 1]); link(wallEdges[k + 1], wallEdges[k]); }
-    const bnd = [];
-    for (let i = 0; i < CW * CH; i++) if (nb1[i] >= 0 && nb2[i] >= 0) bnd.push(i);
-    const tx = new Float32Array(bnd.length), ty = new Float32Array(bnd.length);
-    for (let it = 0; it < 8; it++) {
-      const lam = it % 2 === 0 ? 0.5 : -0.53; // Taubin: smooth without shrinking
-      for (let k = 0; k < bnd.length; k++) {
-        const i = bnd[k];
-        tx[k] = px[i] + lam * ((px[nb1[i]] + px[nb2[i]]) / 2 - px[i]);
-        ty[k] = py[i] + lam * ((py[nb1[i]] + py[nb2[i]]) / 2 - py[i]);
+    // outline neighbours (each outline corner has exactly two)
+    const ring = [];            // positions (k indices into corners) of outline corners
+    const nbA = new Int32Array(nC).fill(-1), nbB = new Int32Array(nC).fill(-1);
+    for (let e = 0; e < edges.length; e += 2) {
+      const a = topId[edges[e]], b = topId[edges[e + 1]];
+      if (nbA[a] < 0) nbA[a] = b; else nbB[a] = b;
+      if (nbA[b] < 0) nbA[b] = a; else nbB[b] = a;
+    }
+    for (let k = 0; k < nC; k++) if (isEdge[corners[k]]) ring.push(k);
+    // spread points evenly along a ring at a given level (stops bunching)
+    const relax = (rx, ry, level, iters) => {
+      const tx = new Float32Array(nC), ty = new Float32Array(nC);
+      for (let it = 0; it < iters; it++) {
+        for (const k of ring) {
+          const a = nbA[k], b = nbB[k];
+          let x = rx[k] * 0.5 + (rx[a] + rx[b]) * 0.25;
+          let y = ry[k] * 0.5 + (ry[a] + ry[b]) * 0.25;
+          [x, y] = project(x, y, level);
+          tx[k] = x; ty[k] = y;
+        }
+        for (const k of ring) { rx[k] = tx[k]; ry[k] = ty[k]; }
       }
-      for (let k = 0; k < bnd.length; k++) { px[bnd[k]] = tx[k]; py[bnd[k]] = ty[k]; }
+    };
+    relax(cx, cy, B, 3);
+
+    const pos = [];
+    const addV = (X, Y, Z) => { pos.push(X, Y, Z); return pos.length / 3 - 1; };
+    const toMesh = (x, y) => [x - Wmm / 2, Hmm / 2 - y];
+
+    // top grid vertices, displaced along the surface normal
+    const topV = new Int32Array(nC), botV = new Int32Array(nC);
+    for (let k = 0; k < nC; k++) {
+      const x = cx[k], y = cy[k];
+      const d0 = domeAt(x, y);
+      const e = cell * 0.5;
+      const dzx = (domeAt(x + e, y) - domeAt(x - e, y)) / (2 * e);
+      const dzy = (domeAt(x, y + e) - domeAt(x, y - e)) / (2 * e);
+      // normal in mesh coords (y flipped)
+      let nx = -dzx, ny = dzy, nz = 1;
+      const nl = Math.hypot(nx, ny, nz); nx /= nl; ny /= nl; nz /= nl;
+      const [X, Y] = toMesh(x, y);
+      const t = tex(X, Y) * texFade(d0) * sideSoft(nz);
+      topV[k] = addV(X + nx * t, Y + ny * t, S.base + d0 + nz * t);
+      botV[k] = addV(X, Y, 0);
     }
 
-    // final positions (mm, y up, centred, z from 0)
-    const Wmm = w * cell, Hmm = h * cell;
-    const pos = new Float32Array(nTop * 2 * 3);
-    let zMax = 0;
-    for (let k = 0; k < nTop; k++) {
-      const ci = verts[k];
-      const X = px[ci] - Wmm / 2;
-      const Y = (Hmm - py[ci]) - Hmm / 2;
-      const fade = Math.min(1, cornerD[ci] / 1.5);
-      const fadeS = fade * fade * (3 - 2 * fade);
-      const tex = textureHeight(L.texture, X, Y, seed) * S.depth * fadeS;
-      const z = Math.max(S.base * 0.6, S.base + cornerZ[ci] + tex);
-      if (z > zMax) zMax = z;
-      pos[k * 3] = X; pos[k * 3 + 1] = Y; pos[k * 3 + 2] = z;
-      const kb = (nTop + k) * 3;
-      pos[kb] = X; pos[kb + 1] = Y; pos[kb + 2] = 0;
+    // side rings for every outline corner, from sd = B down to the outline
+    const K = 12;
+    const levels = [];
+    for (let k = 1; k <= K; k++) levels.push(B * (1 - k / K) * (1 - k / K));
+    const ringX = [], ringY = [];
+    let px0 = cx, py0 = cy;
+    for (const lv of levels) {
+      const rx = new Float32Array(nC), ry = new Float32Array(nC);
+      for (const k of ring) [rx[k], ry[k]] = project(px0[k], py0[k], lv);
+      relax(rx, ry, lv, 3);
+      ringX.push(rx); ringY.push(ry);
+      px0 = rx; py0 = ry;
+    }
+    const cols = new Map(); // corner index -> [top, ring1.., outline@base, outline@bed, bottom]
+    for (const k of ring) {
+      const [Xb, Yb] = toMesh(cx[k], cy[k]);
+      const col = [topV[k]];
+      let arc = 0, prevH = profile(B), lastX = cx[k], lastY = cy[k];
+      levels.forEach((s, li) => {
+        const x = ringX[li][k], y = ringY[li][k];
+        const hS = profile(s);
+        arc += Math.hypot(Math.hypot(x - lastX, y - lastY), prevH - hS);
+        lastX = x; lastY = y; prevH = hS;
+        const [X, Y] = toMesh(x, y);
+        if (s > 0) {
+          // outward direction and profile slope -> surface normal
+          const [gx, gy] = grad(x, y);
+          const gl = Math.hypot(gx, gy) || 1;
+          const ox = -gx / gl, oy = gy / gl; // outward, mesh coords
+          const eps = Math.max(1e-3, s * 0.25);
+          const lo = Math.max(0, s - eps);
+          const slope = Math.min(40, (profile(s + eps) - profile(lo)) / (s + eps - lo));
+          let nx = ox * slope, ny = oy * slope, nz = 1;
+          const nl = Math.hypot(nx, ny, nz); nx /= nl; ny /= nl; nz /= nl;
+          // unfold the side so the texture continues down it without streaks
+          const t = tex(Xb + ox * arc, Yb + oy * arc) * texFade(hS) * sideSoft(nz);
+          col.push(addV(X + nx * t, Y + ny * t, S.base + hS + nz * t));
+        } else {
+          col.push(addV(X, Y, S.base)); // top of the base wall
+          col.push(addV(X, Y, 0));      // outline on the bed
+        }
+      });
+      col.push(botV[k]);
+      cols.set(corners[k], col);
     }
 
-    // tidy to the true bounding box
-    let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
-    for (let k = 0; k < nTop; k++) {
-      const X = pos[k * 3], Y = pos[k * 3 + 1];
-      if (X < minX) minX = X; if (X > maxX) maxX = X; if (Y < minY) minY = Y; if (Y > maxY) maxY = Y;
+    // ---- triangles
+    const tris = [];
+    for (let f = 0; f < faces.length; f += 4) {
+      const a = topId[faces[f]], b = topId[faces[f + 1]], c = topId[faces[f + 2]], d = topId[faces[f + 3]];
+      tris.push(topV[a], topV[c], topV[b], topV[a], topV[d], topV[c]);
+      tris.push(botV[a], botV[b], botV[c], botV[a], botV[c], botV[d]);
+    }
+    for (let k = 0; k < edges.length; k += 2) {
+      const P = cols.get(edges[k]), Q = cols.get(edges[k + 1]);
+      for (let m = 0; m < P.length - 1; m++) {
+        tris.push(P[m], Q[m], Q[m + 1], P[m], Q[m + 1], P[m + 1]);
+      }
+    }
+
+    // weld points that landed on the same spot (tight inside corners) and
+    // drop the zero-area triangles that leaves, so slicers see a clean solid
+    const remap = new Int32Array(pos.length / 3);
+    const seen = new Map();
+    const welded = [];
+    for (let v = 0; v < remap.length; v++) {
+      const key = `${Math.round(pos[v * 3] * 2000)},${Math.round(pos[v * 3 + 1] * 2000)},${Math.round(pos[v * 3 + 2] * 2000)}`;
+      let id = seen.get(key);
+      if (id === undefined) { id = welded.length / 3; seen.set(key, id); welded.push(pos[v * 3], pos[v * 3 + 1], pos[v * 3 + 2]); }
+      remap[v] = id;
+    }
+    const clean = [];
+    for (let t = 0; t < tris.length; t += 3) {
+      const a = remap[tris[t]], b = remap[tris[t + 1]], c = remap[tris[t + 2]];
+      if (a !== b && b !== c && a !== c) clean.push(a, b, c);
+    }
+    tris.length = 0; for (const v of clean) tris.push(v);
+
+    // centre on the bounding box
+    const p = Float32Array.from(welded);
+    let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity, zMax = 0;
+    for (let k = 0; k < p.length; k += 3) {
+      if (p[k] < minX) minX = p[k]; if (p[k] > maxX) maxX = p[k];
+      if (p[k + 1] < minY) minY = p[k + 1]; if (p[k + 1] > maxY) maxY = p[k + 1];
+      if (p[k + 2] > zMax) zMax = p[k + 2];
     }
     const ox = (minX + maxX) / 2, oy = (minY + maxY) / 2;
-    for (let k = 0; k < nTop * 2; k++) { pos[k * 3] -= ox; pos[k * 3 + 1] -= oy; }
-
-    return {
-      pos, idx: Uint32Array.from(tris),
-      sx: maxX - minX, sy: maxY - minY, sz: zMax,
-    };
+    for (let k = 0; k < p.length; k += 3) { p[k] -= ox; p[k + 1] -= oy; }
+    return { pos: p, idx: Uint32Array.from(tris), sx: maxX - minX, sy: maxY - minY, sz: zMax };
   }
 
   function mirrorMesh(m) {

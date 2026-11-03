@@ -16,7 +16,7 @@ from manifold3d import Manifold
 OUT = os.path.join(os.path.dirname(os.path.abspath(__file__)), "out")
 
 # ---------------------------------------------------------------- sizes (mm)
-L, D, H = 220.0, 175.0, 100.0   # outside: width (slide direction) x depth x height
+L, D, H = 220.0, 177.0, 100.0   # outside: width (slide direction) x depth x height; inside fits a 210 x 170 x 75 toy
 WALL = 2.4                      # 6 lines with a 0.4 nozzle
 FLOOR = 1.2
 GD = 1.2                        # groove depth into the walls
@@ -44,8 +44,17 @@ def rod_y(y0, y1, x, z, r):     # cylinder along Y
     return Manifold.cylinder(y1 - y0, r, r, 64).rotate((-90, 0, 0)).translate((x, y0, z))
 
 
-def make_box():
+def make_box(thin=None):
+    """thin: optional thinner wall below the top band. The top band always
+    stays WALL thick to hold the grooves, and a 45 degree ramp joins the two."""
     body = box(0, 0, 0, L, D, H) - box(WALL, WALL, FLOOR, L - WALL, D - WALL, H + E)
+    if thin and thin < WALL:
+        zb, dz, t = G_BOT - 4.0, WALL - thin, 0.01   # band bottom; ramp height
+        body = body - box(thin, thin, FLOOR, L - thin, D - thin, zb - dz + t)
+        body = body - Manifold.batch_hull([
+            box(thin, thin, zb - dz, L - thin, D - thin, zb - dz + t),
+            box(WALL, WALL, zb - t, L - WALL, D - WALL, zb),
+        ])
 
     # Groove: straight slot for the lid, then a 45 degree chamfer above it so
     # the groove roof prints without supports. Runs out through the front (x=0)

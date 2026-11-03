@@ -1,6 +1,7 @@
 # Sliding-lid packaging box
 
-Outside size: **220 mm wide × 175 mm deep × 100 mm high**, open at the top.
+Outside size: **220 mm wide × 177 mm deep × 100 mm high**, open at the top. The inside opening is
+215.2 × 172.2 mm with 94.6 mm under the lid, so a 210 × 170 × 75 mm toy fits with about 1 mm to spare on each side.
 
 - `out/box.stl`: the box body
 - `out/lid.stl`: the sliding lid
@@ -29,19 +30,27 @@ flat side down. Neither part needs supports: the groove roofs are 45° chamfers,
 
 Print the box and the lid at the same time on two printers if you can. They don't fit on one bed together.
 
-## Sensory Potion Kit version (`potion_box.py`)
+## Sensory Potion Kit version (`potion_box.py`), mermaid theme
 
 ![Potion kit box](preview-hero.png)
 
 This is the same box, fit and click-stop, made into themed packaging for the potion kit. Run
 `python3 potion_box.py` (it also needs `pip install fonttools`). The files go to `out/potion/`:
 
-- `box.stl`: print in one colour (Light Blue). Waves and bubbles are sunk 0.8 mm into all four
-  sides, with "SENSORY POTION KIT" on both long sides. There are no colour changes, so it takes the same time as the plain box.
-- `potion-lid.3mf`: the lid is a Light Blue plate with raised Pink art (slot 1 Light Blue, slot 2 Pink).
-  The art is only the top 3 layers (0.84 mm at 0.28 mm layers), so the AMS swaps only a few times, right at the end.
-- `lid-base.stl` + `lid-art.stl`: the same lid as separate parts. With a single-colour printer, add a
-  colour-change pause at the first art layer (z = 2.0 mm).
-- `preview.html`: a 3D preview (serve this folder with `python3 -m http.server`; `?open=90` slides the lid out).
+- `box.stl`: print in one colour (Light Blue). It has **thin 1.6 mm walls**, made stable by:
+  - a solid 2.4 mm band at the top that holds the lid grooves and stiffens the rim
+  - a 5 mm foot band at the bottom
+  - full-width raised waves that work as stiffening ribs
 
-The title text is set by `TITLE` / `SIDE_TEXT` at the top of the script. The font is Titan One (SIL Open Font License, which allows selling printed products).
+  The mermaid tails, shells, stars, bubbles and "SENSORY POTION KIT" stand 0.6 mm out from the
+  thin wall, and the outside stays exactly 220 × 177 × 100 mm. It uses about 20% less plastic than the solid-wall box.
+- `potion-lid.3mf`: the lid is a Light Blue plate with raised Pink art: a mermaid tail, scallop shells, starfish,
+  bubbles, the title and a border (slot 1 Light Blue, slot 2 Pink). The art is only the top 3 layers, so the AMS
+  swaps only a few times, right at the end.
+- `lid-base.stl` + `lid-art.stl`: the same lid as separate parts. With a single-colour printer, add a
+  colour-change pause at z = 2.0 mm.
+- `preview.html`: a 3D preview (serve this folder with `python3 -m http.server`; `?open=90` slides the lid out,
+  `?view=top|side|back` changes the view).
+
+Slicer: 0.28 mm layers, **2 wall loops**, 0% sparse infill for the box, no supports.
+The title text is set by `TITLE` / `SIDE_TEXT` at the top of the script. The font is Titan One (SIL Open Font License).

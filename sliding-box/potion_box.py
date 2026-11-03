@@ -1,12 +1,14 @@
 """Sensory Potion Kit: themed packaging built on the sliding-lid box.
 
-Same box as make_box.py (220 x 175 x 100 mm outside, open top, sliding lid,
+Same box as make_box.py (220 x 177 x 100 mm outside, open top, sliding lid,
 back-wall stop, click bump), dressed for the potion kit:
-  * Box: single colour (Light Blue). Waves and bubbles are sunk 0.8 mm into all
-    four sides, with "SENSORY POTION KIT" on both long sides. No colour changes,
-    so it prints as fast as the plain box.
-  * Lid: Light Blue plate with raised Pink artwork on top (potion bottle,
-    bubbles, starfish, title, border). The colour change happens only in the
+  * Box: single colour (Light Blue), mermaid theme. Walls are 1.6 mm thick,
+    with a full 2.4 mm band at the top (holds the lid grooves and stiffens the
+    rim) and a 5 mm foot band at the bottom. Waves, shells, mermaid tails,
+    stars and bubbles stand 0.6 mm proud of the thin wall, and the full-width
+    waves act as stiffening ribs. The outline stays exactly 220 x 177 x 100 mm.
+  * Lid: Light Blue plate with raised Pink artwork on top (mermaid tail,
+    shells, starfish, bubbles, title, border). The colour change happens only in the
     top 3 layers, so the AMS swaps a few times at the very end.
 
 Run:  python3 potion_box.py     (needs: pip install manifold3d numpy fonttools)
@@ -33,7 +35,10 @@ TITLE = ["SENSORY", "POTION", "KIT"]
 SIDE_TEXT = "SENSORY POTION KIT"
 
 ART_H = 0.84      # raised lid art = 3 layers at 0.28 mm
-DEBOSS = 0.8      # depth of the side decoration
+THIN = 1.6        # wall thickness below the top band (4 lines with a 0.4 nozzle)
+RECESS = 0.6      # side relief height; the thin wall sits this far in from the outline
+PLINTH = 5.0      # full-thickness foot band at the bottom
+RECESS_TOP = mb.G_BOT - 6.0   # where the thick top band (grooves) begins on the outside
 SEG = 64
 COLORS = {"Light Blue": "#A8DDE8", "Pink": "#F0457E"}
 
@@ -141,6 +146,81 @@ def text(s, cap_h, cx, cy, max_w=None, spacing=0.04):
     return cs.translate((cx - x * k / 2, cy - _cap * k / 2))
 
 
+# ---------------------------------------------------------------- mermaid shapes
+def rot(cs, deg, x, y):
+    return cs.rotate(deg).translate((x, y))
+
+
+def shell(x, y, s, deg=0.0, ribs=7):
+    """Scallop shell, hinge at the bottom, about s tall. Ribs are cut as grooves."""
+    t0, t1 = math.radians(28), math.radians(152)
+    pts = [(0.10 * s, 0.0)]
+    for i in range(121):
+        t = t1 - (t1 - t0) * i / 120          # left to right along the scalloped edge
+        k = (t1 - t) / (t1 - t0)
+        r = s * (0.86 + 0.09 * abs(math.sin(ribs * math.pi * k)))
+        pts.append((r * math.cos(t), r * math.sin(t)))
+    pts = [(0.10 * s, 0.0)] + pts[::-1][:-1] + [(-0.10 * s, 0.0)]
+    body = CrossSection([pts]).offset(-0.6, circular_segments=SEG).offset(0.6, circular_segments=SEG)
+    ears = rrect(-0.30 * s, -0.10 * s, 0.30 * s, 0.10 * s, 0.06 * s)
+    grooves = []
+    for i in range(1, ribs):
+        t = t1 - (t1 - t0) * i / ribs
+        grooves.append(polyline([(0.06 * s * math.cos(t), 0.16 * s),
+                                 (0.80 * s * math.cos(t), 0.80 * s * math.sin(t))], max(0.8, 0.05 * s)))
+    grooves.append(polyline([(-0.28 * s, 0.10 * s), (0.28 * s, 0.10 * s)], max(0.8, 0.04 * s)))
+    return rot(body + ears - union(grooves), deg, x, y)
+
+
+def tail(x, y, s, deg=0.0, flip=False):
+    """Mermaid tail: curved scaly body from the waist (top, at x, y) down to a two-lobed fin."""
+    n = 40
+    pts, wid = [], []
+    for i in range(n + 1):
+        t = i / n
+        px = 0.16 * s * math.sin(math.pi * t) * (-1 if flip else 1)
+        pts.append((px, -0.72 * s * t))
+        wid.append(s * (0.115 - 0.085 * t ** 0.8))
+    body = union(CrossSection.batch_hull([circle(wa, *pa), circle(wb, *pb)])
+                 for pa, pb, wa, wb in zip(pts, pts[1:], wid, wid[1:]))
+    body = body - rect(-s, 0, s, s)                                   # flat waist
+    ex, ey = pts[-1]
+    (dx, dy) = (pts[-1][0] - pts[-4][0], pts[-1][1] - pts[-4][1])
+    base = math.degrees(math.atan2(dy, dx))
+    fin, fin_lines = CrossSection(), []
+    for side in (-1, 1):
+        a = math.radians(base + side * 42)
+        cx, cy = ex + 0.13 * s * math.cos(a), ey + 0.13 * s * math.sin(a)
+        lobe = CrossSection.circle(1, SEG).scale((0.16 * s, 0.065 * s)).rotate(math.degrees(a)).translate((cx, cy))
+        fin = fin + CrossSection.batch_hull([lobe, circle(0.035 * s, ex, ey)])
+        for k in (-0.45, 0.45):
+            b2 = a + k * 0.30
+            fin_lines.append(polyline([(ex + 0.07 * s * math.cos(a), ey + 0.07 * s * math.sin(a)),
+                                       (ex + 0.24 * s * math.cos(b2), ey + 0.24 * s * math.sin(b2))], 0.9))
+    fin = fin.offset(0.8, circular_segments=SEG).offset(-0.8, circular_segments=SEG)
+    # scales: little U-shaped grooves in rows, kept off the outline
+    r = 0.042 * s
+    scales = []
+    for row in range(1, 30):
+        yy = -row * 1.5 * r
+        if yy < -0.64 * s:
+            break
+        off = (row % 2) * r
+        for col in range(-6, 7):
+            xx = col * 2 * r + off
+            arc = ring(circle(r, xx, yy), 0.8) - rect(xx - 2 * r, yy, xx + 2 * r, yy + 2 * r)
+            scales.append(arc)
+    scales = union(scales) ^ body.offset(-1.6, circular_segments=SEG)
+    waist = polyline([(-0.11 * s, -0.05 * s), (0.11 * s, -0.05 * s)], 1.0) ^ body.offset(-1.0, circular_segments=SEG)
+    fin_cut = union(fin_lines) ^ fin.offset(-1.4, circular_segments=SEG)
+    shape = body + fin - scales - waist - fin_cut
+    return rot(shape, deg, x, y)
+
+
+def bubbles(spots, w=1.3):
+    return union(ring(circle(r, u, v), w) for u, v, r in spots)
+
+
 # ---------------------------------------------------------------- lid art
 def lid_art():
     """Raised artwork in lid coordinates (lid is 218.5 x 172; x=0 is the thumb-grip end)."""
@@ -148,74 +228,70 @@ def lid_art():
     ly = mb.D - 2 * (mb.WALL - mb.GD) - 2 * mb.GAP_XY
     x0, x1, y0, y1 = 27.0, lx - 10.0, 7.0, ly - 7.0      # clear of grip, side lips and back wall
     parts = [ring(rrect(x0, y0, x1, y1, 10), 2.0)]
+    parts.append(tail(80, 160, 116, 0, flip=True))
+    parts.append(shell(44, 24, 18, -18))
+    parts.append(shell(108, 20, 15, 16))
+    parts.append(star(42, 70, 7, 3.2, 80))
+    parts.append(bubbles([(108, 150, 4.5), (114, 138, 3.0), (106, 128, 2.2), (40, 132, 3.2), (46, 120, 2.0)]))
 
-    # Potion flask: round body, neck, lip, cork; liquid with a wavy surface and bubbles.
-    bx, by, br = 72.0, 72.0, 31.0
-    flask = circle(br, bx, by) + rect(bx - 10, by + 20, bx + 10, by + br + 22) \
-        + rrect(bx - 15, by + br + 20, bx + 15, by + br + 27, 2.5)
-    parts.append(ring(flask, 2.6))
-    parts.append(rrect(bx - 8, by + br + 27, bx + 8, by + br + 37, 2.5))          # cork
-    surface = [(x, by + 6 + 2.2 * math.sin(2 * math.pi * (x - bx + br) / 15))
-               for x in np.linspace(bx + br + 1, bx - br - 1, 80)]
-    above = CrossSection([surface + [(bx - br - 1, by + 300), (bx + br + 1, by + 300)]])
-    liquid = circle(br - 5.5, bx, by) - above
-    for (dx, dy, r) in [(-10, -8, 3.5), (6, -14, 2.5), (12, -2, 4.0), (-2, 2, 2.0), (-14, -20, 2.0)]:
-        liquid = liquid - circle(r, bx + dx, by + dy)
-    parts.append(liquid)
-    # Bubbles rising out of the flask
-    for (dx, dy, r) in [(16, 70, 4.5), (24, 82, 3.0), (10, 86, 2.2)]:
-        parts.append(ring(circle(r, bx + dx, by + dy), 1.4))
-    # Sparkles
-    parts.append(star(bx - 26, by + 52, 6, 2.2))
-    parts.append(star(bx + 30, by + 44, 4, 1.5))
-
-    # Title
-    tx = (118 + x1 - 6) / 2
-    tw = x1 - 6 - 118
-    parts.append(text(TITLE[0], 11, tx, 125, tw))
-    parts.append(text(TITLE[1], 24, tx, 92, tw))
-    parts.append(text(TITLE[2], 24, tx, 56, tw))
-    # Underline wave and a starfish
-    parts.append(wave(tx - 38, tx + 38, 34, 2.0, 19, 2.2))
-    parts.append(star(x1 - 18, 20, 8, 3.6))
-    for (x, y, r) in [(x1 - 40, 18, 2.6), (x1 - 48, 24, 1.8), (124, 140, 2.8)]:
-        parts.append(ring(circle(r, x, y), 1.3))
-    return union(parts)
+    tx = (122 + x1 - 6) / 2
+    tw = x1 - 6 - 122
+    parts.append(text(TITLE[0], 11, tx, 132, tw))
+    parts.append(text(TITLE[1], 24, tx, 100, tw))
+    parts.append(text(TITLE[2], 24, tx, 64, tw))
+    parts.append(wave(tx - 36, tx + 36, 42, 2.0, 18, 2.2))
+    parts.append(shell(tx - 14, 15, 16, -10))
+    parts.append(star(tx + 22, 23, 8, 3.6))
+    parts.append(bubbles([(tx + 40, 16, 2.4), (tx + 36, 28, 1.6), (tx - 40, 148, 2.6)]))
+    return union(parts) ^ rect(x0, y0, x1, y1).offset(0.01)
 
 
-# ---------------------------------------------------------------- side decoration
-def side_pattern(w, with_text):
-    """2D pattern for one outside face, u across (0..w), v up (0..H)."""
-    parts = [wave(6, w - 6, 14, 2.5, 22, 2.6), wave(6, w - 6, 24, 2.5, 22, 2.0).translate((11, 0))
-             ^ rect(6, 0, w - 6, 40)]
-    rng = np.random.default_rng(7 if with_text else 3)
-    spots = []
-    while len(spots) < (10 if with_text else 12):
-        u, v, r = rng.uniform(14, w - 14), rng.uniform(34, 84), rng.uniform(2.0, 4.5)
-        if with_text and abs(v - 58) < 13:
-            continue
-        if all(math.hypot(u - a, v - b) > r + c + 5 for a, b, c in spots):
-            spots.append((u, v, r))
-    parts += [ring(circle(r, u, v), 1.3) for u, v, r in spots]
-    if with_text:
-        parts.append(text(SIDE_TEXT, 11, w / 2, 58, w - 30))
-    return union(parts)
+# ---------------------------------------------------------------- box sides
+def side_pattern(w, long_side):
+    """Raised relief for one outside face, u across (0..w), v up. Horizontal
+    waves run the full width and double as stiffening ribs."""
+    parts = [wave(4, w - 4, 16, 2.5, 22, 3.0), wave(4, w - 4, 26, 2.5, 22, 2.4).translate((11, 0))
+             ^ rect(4, 0, w - 4, 40)]
+    if long_side:
+        parts.append(text(SIDE_TEXT, 11, w / 2, 62, w - 110))
+        parts += [shell(w / 2 - 78, 36, 14, -12), shell(w / 2 + 78, 36, 14, 12),
+                  tail(26, 88, 40, -6), tail(w - 26, 88, 40, 6, flip=True),
+                  star(w / 2 - 60, 80, 5.5, 2.4), star(w / 2 + 30, 40, 6, 2.6, 80)]
+        parts.append(bubbles([(w / 2 - 40, 82, 3.2), (w / 2 + 10, 84, 2.2), (w / 2 + 40, 80, 3.6),
+                              (w / 2 - 30, 42, 2.6), (w / 2 + 4, 44, 3.4), (60, 80, 2.4), (w - 60, 82, 2.4)]))
+    else:
+        parts += [shell(w / 2, 46, 26), star(w / 2 - 46, 70, 7, 3.0), star(w / 2 + 48, 60, 5, 2.2, 80)]
+        parts.append(bubbles([(30, 50, 3.0), (40, 80, 2.2), (w - 34, 82, 3.4), (w - 26, 46, 2.4),
+                              (w / 2 + 20, 82, 2.6), (w / 2 - 22, 84, 1.8)]))
+    return union(parts) ^ rect(3, PLINTH + 0.5, w - 3, RECESS_TOP - 0.5)
 
 
-def face_cutter(w, with_text):
-    """Cutter for the face at y=0 spanning x 0..w (sinks DEBOSS into the wall)."""
-    m = Manifold.extrude(side_pattern(w, with_text), DEBOSS + 1.0).translate((0, 0, -DEBOSS))
-    return m.rotate((90, 0, 0))     # (u, v, w) -> (u, -w, v): y from -1 to +DEBOSS
+def face_relief(w, long_side):
+    """Relief for the face at y=0 spanning x 0..w: from the recessed wall (y=RECESS)
+    out to the full box outline (y=0), so the box stays exactly 220 x 175."""
+    m = Manifold.extrude(side_pattern(w, long_side), RECESS + 0.3).translate((0, 0, -RECESS - 0.3))
+    return m.rotate((90, 0, 0))     # (u, v, w) -> (u, -w, v): y from 0 to RECESS + 0.3
 
 
 def make_box():
-    b = mb.make_box()
-    L, D = mb.L, mb.D
-    front = face_cutter(L, True)
-    back = face_cutter(L, True).rotate((0, 0, 180)).translate((L, D, 0))
-    left = face_cutter(D, False).rotate((0, 0, -90)).translate((0, D, 0))
-    right = face_cutter(D, False).rotate((0, 0, 90)).translate((L, 0, 0))
-    return b - front - back - left - right
+    L, D, t = mb.L, mb.D, 0.01
+    b = mb.make_box(thin=RECESS + THIN)
+    # Recess the outside of the thin wall between the plinth and the top band;
+    # the band edge gets a 45 degree chamfer so nothing overhangs.
+    keep = box3(RECESS, RECESS, PLINTH - 1, L - RECESS, D - RECESS, RECESS_TOP)
+    b = b - (box3(-1, -1, PLINTH, L + 1, D + 1, RECESS_TOP) - keep)
+    b = b - (box3(-1, -1, RECESS_TOP - t, L + 1, D + 1, RECESS_TOP + RECESS) - Manifold.batch_hull([
+        box3(RECESS, RECESS, RECESS_TOP - t, L - RECESS, D - RECESS, RECESS_TOP),
+        box3(0, 0, RECESS_TOP + RECESS - t, L, D, RECESS_TOP + RECESS)]))
+    front = face_relief(L, True)
+    back = face_relief(L, True).rotate((0, 0, 180)).translate((L, D, 0))
+    left = face_relief(D, False).rotate((0, 0, -90)).translate((0, D, 0))
+    right = face_relief(D, False).rotate((0, 0, 90)).translate((L, 0, 0))
+    return b + front + back + left + right
+
+
+def box3(x0, y0, z0, x1, y1, z1):
+    return Manifold.cube((x1 - x0, y1 - y0, z1 - z0)).translate((x0, y0, z0))
 
 
 def make_lid():

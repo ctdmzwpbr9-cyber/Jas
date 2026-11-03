@@ -1,0 +1,92 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Garden Friends Preview</title>
+<style>
+  html, body { margin: 0; height: 100%; background: #f6f1ea; overflow: hidden; }
+  canvas { display: block; }
+</style>
+</head>
+<body>
+<!-- Open through a local server (e.g. `python3 -m http.server` in this folder) so the STLs can load. -->
+<script type="importmap">
+{ "imports": { "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js",
+               "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/" } }
+</script>
+<script type="module">
+import * as THREE from "three";
+import { STLLoader } from "three/addons/loaders/STLLoader.js";
+import { OrbitControls } from "three/addons/controls/OrbitControls.js";
+
+const COLORS = { yellow: 0xffd24d, black: 0x3a3046, white: 0xf7f4ef, pink: 0xff9ec4, red: 0xf25c5c,
+                 green: 0x6ccb68, purple: 0xb48cf2, cream: 0xfff1dc };
+const PARTS = {
+  ladybug: ["black", "red"], bee: ["black", "pink", "white", "yellow"], flower: ["black", "pink", "yellow"],
+  frog: ["black", "red", "green"], snail: ["black", "red", "purple", "green"], caterpillar: ["green", "black", "red", "purple"],
+};
+const CELL = 78, POCKET_FLOOR = 14 - 9;
+const SLOTS = { ladybug: [-CELL, 39], bee: [0, 39], flower: [CELL, 39], frog: [-CELL, -39], snail: [0, -39], caterpillar: [CELL, -39] };
+const params = new URLSearchParams(location.search);
+const OUTSIDE = { flower: [70, -150, 0, 18], snail: [-20, -140, 0, -10] };   // pieces lying in front of the tray
+
+const renderer = new THREE.WebGLRenderer({ antialias: true, preserveDrawingBuffer: true });
+renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+renderer.setSize(innerWidth, innerHeight);
+renderer.shadowMap.enabled = true;
+renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+renderer.outputColorSpace = THREE.SRGBColorSpace;
+document.body.appendChild(renderer.domElement);
+
+const scene = new THREE.Scene();
+scene.background = new THREE.Color(0xf6f1ea);
+const camera = new THREE.PerspectiveCamera(30, innerWidth / innerHeight, 1, 3000);
+camera.up.set(0, 0, 1);
+camera.position.set(0, -430, 330);
+const controls = new OrbitControls(camera, renderer.domElement);
+controls.target.set(0, -30, 0);
+controls.update();
+
+scene.add(new THREE.HemisphereLight(0xffffff, 0xd8cfc4, 1.6));
+const sun = new THREE.DirectionalLight(0xffffff, 2.2);
+sun.position.set(-160, -200, 380);
+sun.castShadow = true;
+sun.shadow.mapSize.set(2048, 2048);
+Object.assign(sun.shadow.camera, { left: -260, right: 260, top: 260, bottom: -260, near: 10, far: 1200 });
+sun.shadow.bias = -0.0004;
+scene.add(sun);
+const ground = new THREE.Mesh(new THREE.PlaneGeometry(3000, 3000), new THREE.ShadowMaterial({ opacity: 0.18 }));
+ground.receiveShadow = true;
+scene.add(ground);
+
+const loader = new STLLoader();
+const load = (url) => new Promise((res, rej) => loader.load(url, res, undefined, rej));
+const mat = (c) => new THREE.MeshStandardMaterial({ color: c, roughness: 0.62, metalness: 0 });
+
+async function addMesh(url, color, x, y, z, rotZ = 0) {
+  const g = await load(url);
+  g.computeVertexNormals();
+  const m = new THREE.Mesh(g, mat(color));
+  m.castShadow = m.receiveShadow = true;
+  m.position.set(x, y, z);
+  m.rotation.z = THREE.MathUtils.degToRad(rotZ);
+  scene.add(m);
+}
+
+const jobs = [addMesh("out/stl/tray.stl", COLORS.cream, 0, 0, 0)];
+for (const [key, parts] of Object.entries(PARTS)) {
+  const out = OUTSIDE[key];
+  const [x, y, z, r] = out ? out : [...SLOTS[key], POCKET_FLOOR, 0];
+  for (const p of parts) jobs.push(addMesh(`out/stl/parts/${key}-${p}.stl`, COLORS[p], x, y, z, r));
+}
+await Promise.all(jobs);
+if (params.get("view") === "top") { camera.position.set(0, -60, 620); controls.target.set(0, -40, 0); controls.update(); }
+const render = () => renderer.render(scene, camera);
+controls.addEventListener("change", render);
+addEventListener("resize", () => { camera.aspect = innerWidth / innerHeight; camera.updateProjectionMatrix(); renderer.setSize(innerWidth, innerHeight); render(); });
+render();
+window.ready = true;
+</script>
+</body>
+</html>

@@ -1,0 +1,43 @@
+GARDEN FRIENDS SENSORY PUZZLE - print guide (Bambu Lab P1S + AMS)
+=====================================================================
+
+What you get
+  6 chunky critter pieces, each with a different texture to feel:
+    Ladybug      bumpy spots          Bee          ridged stripes
+    Flower       petal grooves        Frog         dimples
+    Snail        swirly ridge         Caterpillar  rolling humps
+  1 tray (250 x 172 x 14 mm) with a matching pocket for each piece and a
+  push-out hole under every pocket.
+
+Plates and AMS slots
+  plate1-bee-flower.3mf
+    Slot 1 Yellow   Slot 2 Black   Slot 3 White   Slot 4 Pink
+  plate2-ladybug-frog-snail-caterpillar.3mf
+    Slot 1 Red      Slot 2 Green   Slot 3 Purple  Slot 4 Black
+  plate3-tray.3mf
+    One colour (cream, white, light wood PLA all look nice)
+
+In Bambu Studio
+  1. File > Import > Import 3MF/STL. If asked, load geometry only.
+  2. Each piece imports as ONE object made of coloured parts. Every part's
+     name ends in "- slot N": in the Objects list, set that part's filament
+     to slot N.
+  3. Press A to arrange. Print flat side down. No supports needed.
+  4. Settings that work well: 0.2 mm layers, 3 walls, 15% gyroid infill,
+     4 top layers. PLA or PETG.
+
+Single-colour printer?
+  Use stl/<piece>.stl. Every texture is real geometry, so the set still
+  works by touch in one colour.
+
+Fit
+  Pockets are 0.6 mm bigger than the pieces on every side. If your printer
+  runs tight, scale the tray to 101% in X and Y (not Z).
+
+Selling it
+  These designs are original, so you can sell the prints. If you sell to
+  children, check your local toy safety rules first (in the US: CPSIA
+  testing + a Children's Product Certificate; in the EU/UK: EN 71 / UKCA
+  marking). Every piece is far larger than a small-parts choking cylinder,
+  but always use a toy-safe filament and print solidly (3+ walls) so no
+  features can snap off.

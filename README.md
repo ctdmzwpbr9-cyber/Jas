@@ -1,5 +1,8 @@
 # Textured bubble letters
 
+> Also here: **[Garden Friends sensory puzzle](#garden-friends-sensory-puzzle-3d-print)**, a
+> 3D-printable sensory toy set (`sensory3d/`).
+
 This repo has two tools:
 
 - **`print3d.html`: Bubble Letter Maker for 3D printing.** It makes printable
@@ -79,3 +82,22 @@ Each letter is rendered separately:
    occlusion.
 6. **Composite**: the letter is placed on the scene with a soft drop shadow and
    a tighter contact shadow.
+
+## Garden Friends sensory puzzle (3D print)
+
+![Garden Friends](sensory3d/preview-hero.png)
+
+Six chunky critter pieces, each with a different texture to feel (bumpy
+ladybug spots, ridged bee stripes, petal grooves, frog dimples, a swirly snail
+shell and caterpillar humps), plus a 250 x 172 mm tray with a matching pocket
+and push-out hole for each piece. Multicolour for Bambu Lab P1S + AMS: two
+4-colour plates plus a single-colour tray. Single-colour STLs are included too.
+
+Files are in `sensory3d/out/`. `sensory3d/out/print-guide.txt` covers slots,
+settings and selling notes. To rebuild after changing a design:
+
+    pip install manifold3d
+    python3 sensory3d/make_set.py
+
+`sensory3d/preview.html` is a 3D viewer for the pieces. Serve the folder with
+`python3 -m http.server`, then open it in a browser.
